@@ -30,7 +30,7 @@ public class TwitterProducer {
     String token = "1295664946454429696-YXe6OGRVm5TPYmQwWkd7gvW2RZv1BV";
     String tokenSecret = "j4mALfXdUWD3WV900YxvUiIpQwJ48xyhGf5ReaICqW3K7";
 
-    List<String> terms = Lists.newArrayList("kafka");
+    List<String> terms = Lists.newArrayList("bitcoin", "usa", "politics", "soccer");
 
     public TwitterProducer() {}
 
@@ -109,7 +109,7 @@ public class TwitterProducer {
         properties.setProperty(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         properties.setProperty(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
 
-        // make producer "safe" by enabling idempotence.
+        // SAFETY SETTINGS (make producer "safe" by enabling idempotence)
         properties.setProperty(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
 
         // these properties are set by default, since idempotence=true. Also set them explicitly for greater visibility
@@ -118,7 +118,10 @@ public class TwitterProducer {
         // max in-flight requests=5 is safe/performant in Kafka >= 1.1. If using an earlier version, set to 1
         properties.setProperty(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "5");
 
-
+        // HIGH THROUGHPUT SETTINGS (at the expense of slight latency/CPU usage)
+        properties.setProperty(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
+        properties.setProperty(ProducerConfig.LINGER_MS_CONFIG, "20"); // ms
+        properties.setProperty(ProducerConfig.BATCH_SIZE_CONFIG, Integer.toString(32 * 1024)); // 32 KB
 
         // create the producer
         return new KafkaProducer<String, String>(properties);
