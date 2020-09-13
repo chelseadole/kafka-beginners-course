@@ -1,5 +1,6 @@
 package com.github.chelseadole.kafka.tutorial3;
 
+import com.google.gson.JsonParser;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
@@ -62,6 +63,8 @@ public class ElasticSearchConsumer {
         properties.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         properties.setProperty(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         properties.setProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest"); // "earliest", "latest", or "none"
+        properties.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); // disable autocommit of offsets
+        properties.setProperty(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "10"); // consumer receives max 10 records at once
 
         // Create the consumer
         KafkaConsumer<String, String> consumer = new KafkaConsumer<String, String>(properties);
@@ -69,41 +72,53 @@ public class ElasticSearchConsumer {
         return consumer;
     }
 
+    private static final JsonParser jsonParser = new JsonParser();
+    public static String extractIdFromTweet(String tweetJson) {
+        // extract id from json using gson library
+        return jsonParser.parse(tweetJson).getAsJsonObject().get("id_str").getAsString();
+    }
+
     public static void main(String[] args) throws IOException {
         Logger logger = LoggerFactory.getLogger(ElasticSearchConsumer.class.getName());
 
         // create the client
         RestHighLevelClient client = createClient();
-        String jsonString = "{ \"foo\": \"bar\" }";
 
         KafkaConsumer<String, String> consumer = createConsumer("twitter_tweets");
         // Poll for new data! :D
         while (true) {
             ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
 
+            logger.info("Received " + records.count() + " records");
             for (ConsumerRecord<String, String> record : records) {
                 // get tweet from Kafka
                 String tweet = record.value();
 
-                // Add tweet to "twitter" elasticsearch index, with type tweets
-                IndexRequest indexRequest = new IndexRequest("twitter", "tweets").source(
+                // String id = record.topic() + "_" + record.partition() + "_" + record.offset(); -- generic id
+                String id = extractIdFromTweet(record.value());
+
+                // Add tweet to "twitter" elasticsearch index, with type tweets. Adding "id" makes your consumer
+                // idempotent, because if you're processing a repeat message, it will just overwrite the currently
+                // existing data with the same data.
+                IndexRequest indexRequest = new IndexRequest("twitter", "tweets", id).source(
                         tweet, XContentType.JSON
                 );
 
                 IndexResponse indexResponse = client.index(indexRequest, RequestOptions.DEFAULT);
-                String id = indexResponse.getId();
                 logger.info(id);
 
                 try {
-                    Thread.sleep(1000); // 1 second delay
+                    Thread.sleep(10); // 10ms delay
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-
             }
+            logger.info("Committing offsets...");
+            consumer.commitSync();
+            logger.info("Offsets have been committed.");
         }
 
         // close client gracefully
-        client.close();
+//        client.close();
     }
 }
